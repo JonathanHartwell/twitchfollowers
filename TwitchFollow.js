@@ -4,7 +4,7 @@ require('dotenv').config();
 
 const CLIENT_ID = process.env.TWITCH_CLIENT_ID || 'your_client_id';
 const CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET || 'your_client_secret';
-// const RATE_LIMIT_DELAY = 1; // 1 ms delay between requests
+const RATE_LIMIT_DELAY = 1; // 1 ms delay between requests
 const TOP_USERS_COUNT = 25;
 const usernamesFilePath = './usernames.txt';
 let usernames = [];
@@ -37,7 +37,7 @@ async function getUserData(username, access_token) {
 
   try {
     const response = await axios.get(url, { headers });
-    console.log(response.data.data[0])
+    // console.log(response.data.data[0]) //used this to console log the data to check if I was getting everything
     return response.data.data[0];
   } catch (theseHands) {
     console.error(`Error getting user data for ${username}:`, theseHands.message);
@@ -46,18 +46,35 @@ async function getUserData(username, access_token) {
 }
 
 //this uses the userId we collected from the getUserData function to get the number of followers each user has.
-async function getFollowerCount(userId, access_token) {
+async function getFollowerCount(broadcasterId, access_token, userIdToCheck) {
   const headers = {
     'Client-ID': CLIENT_ID,
     Authorization: `Bearer ${access_token}`,
   };
-  const url = `https://api.twitch.tv/helix/users/follows?to_id=${userId}`;
+  const params = {
+    broadcaster_id: broadcasterId,
+    user_id: userIdToCheck, // Optional: If specified, check if this user follows the broadcaster
+  };
+  const url = 'https://api.twitch.tv/helix/channels/followers';
 
   try {
-    const response = await axios.get(url, { headers });
+    const response = await axios.get(url, { headers, params });
     return response.data.total || 0;
   } catch (theseHands) {
-    console.error(`Error getting follower count for user ID ${userId}:`, theseHands.message);
+    // Handle errors as mentioned in the API documentation
+    if (theseHands.response) {
+      // Handle error responses
+      if (theseHands.response.status === 410) {
+        console.error(`User or broadcaster has been removed or doesn't exist.`);
+      } else if (theseHands.response.status === 429) {
+        console.error(`Rate limit exceeded. Retry after ${theseHands.response.headers['retry-after']} seconds.`);
+      } else {
+        console.error(`Error getting follower count: ${theseHands.message}`);
+      }
+    } else {
+      // Handle network errors
+      console.error(`Network error while getting follower count: ${theseHands.message}`);
+    }
     return 0;
   }
 }
@@ -79,7 +96,7 @@ async function processUsernames(usernames, access_token) {
     }
 
     // Introduce rate limiting between requests to prevent rate limit error from twitch's API
-    // await delay(RATE_LIMIT_DELAY); turns out I did not need it though
+    await delay(RATE_LIMIT_DELAY); //turns out I did not need it though
   }
 
   //sorts results in descending order
@@ -93,9 +110,9 @@ async function processUsernames(usernames, access_token) {
   }
 }
 
-// function delay(ms) {
-//   return new Promise(resolve => setTimeout(resolve, ms));
-// }
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 // gets the users from usernames.txt and puts them into an array of individual usernames.
 try {
